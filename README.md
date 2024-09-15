@@ -1,8 +1,6 @@
 Book Data Cleaning and Analysis Project
 Project Overview
-This project involves cleaning, analyzing, and visualizing a dataset of books using R. The goal of this project is to explore various attributes of books, 
-including ratings, authors, publishers, and content length, and to discover insights about the most prolific and highest-rated authors and publishers. 
-Additionally, the project includes advanced techniques such as text tokenization, cosine similarity calculations, and machine learning models for predictive analysis.
+This project involves cleaning, analyzing, and visualizing a dataset of books using R. The goal of this project is to explore various attributes of books, including ratings, authors, publishers, and content length, and to discover insights about the most prolific and highest-rated authors and publishers. Additionally, the project includes advanced techniques such as text tokenization, cosine similarity calculations, and machine learning models for predictive analysis.
 
 Technologies and Packages Used
 R Programming Language
@@ -46,3 +44,6 @@ git clone https://github.com/murphyi00/books.git
 Install the required R packages:
 install.packages(c("stringdist", "plotly", "ggplot2", "quanteda", "tidyverse", "neuralnet", "e1071", "caret"))
 Open and run the R script in your preferred R environment (e.g., RStudio)
+
+[Click here to view `project.rmd`](https://github.com/murphyi00/books/blob/main/project.rmd)
+
