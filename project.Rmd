@@ -1,0 +1,550 @@
+---
+title: "Cleaning"
+output: html_document
+date: "2023-06-09"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+options(repos = c(CRAN = "https://cran.rstudio.com/"))
+
+```
+
+
+```{r}
+
+#install.packages("stringdist")
+library(stringdist)
+install.packages("plotly")
+library(plotly)
+library(stringr)
+library(forcats)
+library(ggplot2)
+
+library(quanteda)
+library(quanteda.textplots)
+library(quanteda.textstats)
+library(tidyverse)
+
+```
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r books}
+books <- read_csv("C:/Users/murph/Downloads/books.csv")
+
+summary(books)
+```
+
+
+
+```{r}
+#Begin data cleaning on relevant fields for use in analysis
+
+books$publication_date <- as.Date(books$publication_date, format = "%m/%d/%Y")
+books$average_rating <- as.numeric(books$average_rating)
+books$num_pages <- as.numeric(books$num_pages)
+books$bookID <- as.numeric(books$bookID)
+
+books_complete <- books[complete.cases(books), ]          #Remove 6 faulty records (0.06% ) in data cleaning effort
+summary(books_complete)
+```
+
+```{r}
+#  Get the publisher field cleaned up with ability to convert it to factors with some accuracy
+
+
+```
+
+```{r}
+
+# Use a function of quanteda package, tokens(), to make more analysis possible, and put it in a document feature matrix with dfm() 
+
+toks_publisher <- tokens(books_complete$publisher, remove_punct = TRUE)
+
+# Clean the data of insignificant tokens by removing stopwords using token_select()
+
+toks_nostop <- tokens_select(toks_publisher, pattern = stopwords("en"), selection = "remove")
+
+
+# Remove "inc." from the tokens
+toks_nostop <- tokens_remove(toks_nostop, "inc.", case_insensitive = TRUE)
+
+# Create the DFM
+
+dfm_publisher <- dfm(toks_nostop)
+
+```
+
+
+```{r}
+#  Just the words in the publisher names, sorted by frequency for visual analysis
+freq_table <- textstat_frequency(dfm_publisher)
+head(freq_table, 10)
+```
+## If we wanted to start a publishing business, these words might be good in the name of the business.
+
+```{r}
+#  Look at the wordcloud from the document feature matrix, like in lab 9
+#  
+textplot_wordcloud(dfm_publisher, min_count = 1) 
+
+```
+
+```{r}
+# Implement a method of comparison by first creating a dictionary of publishers from the publishers in the list
+
+# Calculate the cosine similarity matrix
+
+similarity_matrix <- textstat_simil(dfm_publisher, method = "cosine")
+
+# Create an empty mapping dictionary
+keyword_mapping <- list()
+
+# Set a threshold for similarity
+similarity_threshold <- 0.8
+
+# Loop through each publisher
+for (i in 1:nrow(books_complete)) {
+  publisher <- books_complete$publisher[i]
+  
+  # Get the similarity scores for the current publisher
+  similarity_scores <- similarity_matrix[i, ]
+  
+  # Find the indices of the most similar publishers
+  most_similar_indices <- which(similarity_scores > similarity_threshold)
+  
+  # Get the most similar publishers as matched keywords
+  matched_keywords <- colnames(similarity_matrix)[most_similar_indices]
+  
+  # Check if the keywords already exist in the mapping dictionary
+  for (keyword in matched_keywords) {
+    if (keyword %in% names(keyword_mapping)) {
+      # If it exists, append the current publisher to the existing list of publishers
+      keyword_mapping[[keyword]] <- c(keyword_mapping[[keyword]], publisher)
+    } else {
+      # If it doesn't exist, create a new entry in the mapping dictionary
+      keyword_mapping[[keyword]] <- publisher
+    }
+  }
+}
+
+
+```
+## My aim is to factorize the publisher field based on the keyword mapping, but I'll use a derived variable
+
+```{r}
+
+
+# Create a new column for the factorized publisher
+
+books_complete$Factor_publisher <- books_complete$publisher
+
+
+# Loop through each keyword in the keyword_mapping dictionary
+for (keyword in names(keyword_mapping)) {
+  # Get the associated publishers for the current keyword
+  publishers <- keyword_mapping[[keyword]]
+  
+  # Factorize the publisher field based on the keyword
+  books_complete$Factor_publisher[books_complete$publisher %in% publishers] <- keyword
+}
+
+# Convert the Factor_publisher column to a factor
+books_complete$Factor_publisher <- as.factor(books_complete$Factor_publisher)
+
+# Get the unique factor levels in the Factor_publisher column
+factor_levels <- levels(books_complete$Factor_publisher)
+
+# Rename the factor levels to the contents of text####[1]
+for (i in 1:length(factor_levels)) {
+  factor_levels[i] <- keyword_mapping[[factor_levels[i]]][1]
+}
+
+# Assign the renamed factor levels back to the Factor_publisher column
+levels(books_complete$Factor_publisher) <- factor_levels
+
+```
+## Above average publishers, their average book is higher than the overal average, 3.934
+```{r}
+library(ggplot2)
+
+# Subset the dataset for above-average publishers
+above_avg_publishers <- books_complete %>%
+  group_by(Factor_publisher) %>%
+  summarize(avg_rating = mean(average_rating), num_books = n()) %>%
+  filter(avg_rating > 3.934)
+
+# Create the scatter plot
+ggplot(data = above_avg_publishers, aes(x = log(num_books), y = avg_rating)) +
+  geom_point(size = 4, color = "blue") +
+  labs(x = "Log scale: Number of Published Works", y = "Average Rating", title = "Above-Average Publishers") +
+  theme_minimal()
+
+```
+```{r}
+
+```
+
+
+## Remove bottom 10% of books, those with with very few ratings, only 0-19.
+```{r}
+# Remove records for authors with fewer than 20 ratings
+filtered_books <- books_complete %>%
+  filter(ratings_count >= 20)
+```
+## If I have a super long manafesto, where should I go to publish it?
+
+```{r}
+# Which publishers on the list produce the longest books?
+
+longest_books <- books_complete %>%
+  group_by(publisher) %>%
+  summarize(max_num_pages = max(num_pages)) %>%
+  arrange(desc(max_num_pages)) %>%
+  head(250)
+
+longest_books # Over a hundred publishers (118 publishers) will publish books over 1000 pages
+
+
+```
+
+## A usefull list of prolific authors, top authors by most total books published
+
+```{r}
+#   Which authors publish the most books over time?
+
+
+top_authors <- books_complete %>%
+  group_by(authors) %>%
+  summarize(total_books = n()) %>%
+  arrange(desc(total_books))
+
+print(top_authors)
+
+top_authors <- books_complete %>%
+  group_by(authors) %>%
+  summarize(total_books = n()) %>%
+  arrange(desc(total_books)) %>%
+  mutate(author_rank = row_number())
+
+books_complete <- left_join(books_complete, top_authors, by = "authors")
+
+
+```
+##  A list of top authors by most pages published in total
+```{r}
+#   Which authors publish the most content over time, by page count?
+ 
+
+top_authors <- books_complete %>%
+  group_by(authors) %>%
+  summarize(total_pages = sum(num_pages)) %>%
+  arrange(desc(total_pages))
+
+print(top_authors)
+
+```
+## View 
+```{r}
+
+# Select the top 50 authors based on the total number of pages
+top_authors <- books_complete %>%
+  group_by(authors) %>%
+  summarize(total_pages = sum(num_pages)) %>%
+  arrange(total_pages) %>%
+  top_n(50)
+
+# Create a data frame for the heat map
+heatmap_data <- books_complete %>%
+  filter(authors %in% top_authors$authors) %>%
+  group_by(authors) %>%
+  summarize(total_books = n(), total_pages = sum(num_pages)) %>%
+  arrange(total_pages) # Sort the data frame by total pages
+
+# Create the heat map plot
+heatmap <- ggplot(heatmap_data, aes(x = total_books, y = reorder(authors, total_pages), fill = total_pages)) +
+  geom_tile() +
+  scale_fill_gradient(low = "pink", high = "darkred") +
+  labs(title = "Top 50 Authors - Total Number of Pages",
+       x = "Total Books", y = "Authors",
+       fill = "Total Pages Authored")
+
+heatmap
+```
+
+```{r}
+
+favorites_outliers_omitted <- filter(books_complete, ratings_count < 20000, ratings_count > 10)
+
+# Assign colors based on intervals using a gradient 
+colors <- colorRampPalette(c("pink", "darkred"))(10)
+
+# Cut author_rank into intervals and assign colors
+intervals <- cut(books_complete$author_rank, breaks = 10, labels = FALSE)
+colors <- colors[intervals]
+
+# Plot the scatter plot with color-coded points
+plot(favorites_outliers_omitted$average_rating, favorites_outliers_omitted$ratings_count,
+     col = colors,
+     xlab = "Average Rating, Popular Authors Darker Red",
+     ylab = "Ratings Count",
+     main = "Scatter Plot of Average Rating vs Ratings Count")
+
+
+```
+
+
+
+```{r}
+library(plotly)
+
+favorites_outliers_omitted <- filter(books_complete, ratings_count < 20000, ratings_count > 10)
+
+
+# Assign colors based on intervals using a gradient palette
+colors <- colorRampPalette(c("pink", "darkred"))(10)
+
+# Cut author_rank into intervals and assign colors
+intervals <- cut(favorites_outliers_omitted$author_rank, breaks = 10, labels = FALSE)
+colors <- colors[intervals]
+
+# Create a hover text with additional information
+hover_text <- paste("Title: ", favorites_outliers_omitted$title,
+                    "<br>Author: ", favorites_outliers_omitted$authors,
+                    "<br>Ratings Count: ", favorites_outliers_omitted$ratings_count,
+                    "<br>Average Rating: ", favorites_outliers_omitted$average_rating)
+
+# Create a scatter plot with hover information using plot_ly
+plot_ly(favorites_outliers_omitted, x = ~average_rating, y = ~ratings_count,
+        type = "scatter", mode = "markers",
+        color = ~colors, colors = c("pink", "darkred"),
+        text = hover_text, hoverinfo = "text") %>%
+  layout(xaxis = list(title = "Average Rating"),
+         yaxis = list(title = "Ratings Count"),
+         title = "Interactive Scatter Plot with Hover Information")
+
+
+```
+
+```{r}
+# Some seem publishers specifically associated with super long books, these are 80% box sets.
+
+longest_books <- books_complete %>%
+  group_by(publisher) %>%
+  summarize(max_pages = max(num_pages),
+            author = authors[which.max(num_pages)]) %>%  # Get the title corresponding to the max_pages
+  arrange(desc(max_pages))
+
+head(longest_books, 10)  # Display the top 10 publishers with the longest books and their corresponding titles
+
+
+```
+
+```{r}
+# These publishers average book
+
+top_100_publishers <- books_complete %>%
+  group_by(publisher) %>%
+  summarize(total_books = n()) %>%
+  arrange(desc(total_books)) %>%
+  top_n(100)
+
+longest_books <- books_complete %>%
+  filter(publisher %in% top_100_publishers$publisher) %>%
+  group_by(publisher) %>%
+  summarize(average_pages = round(mean(num_pages))) %>%
+  arrange(desc(average_pages))
+
+head(longest_books, 10)  # Display the top 10 publishers with the longest books
+
+```
+
+##  Most common publishers on the GoodReads site
+
+
+
+```{r}
+
+most_books <- books_complete %>%
+  group_by(publisher) %>%
+  summarize(total_books = n()) %>%
+  arrange(desc(total_books))
+
+head(most_books, 10)  # Display the top 10 publishers with the most books
+
+```
+##  Top 100 authors sorted by quantity of unique publishers:
+
+```{r}
+
+# Group the data by authors and count the number of unique publishers for each author
+author_publishers <- books_complete %>%
+  group_by(authors) %>%
+  summarize(unique_publishers = n_distinct(publisher))
+
+# Sort the authors by the number of unique publishers in descending order
+author_publishers_sorted <- author_publishers %>%
+  arrange(desc(unique_publishers))
+
+# Select the top 100 authors with the most unique publishers
+top_authors <- head(author_publishers_sorted, 100)
+
+
+top_authors
+
+
+```
+# Use top_authors as judged by how many publishers they work with, and compare ratings with average authors
+
+```{r}
+
+# Calculate the average rating for each author in the top_authors list
+top_authors_with_rating <- top_authors %>%
+  left_join(books_complete, by = "authors") %>%
+  group_by(authors) %>%
+  summarize(unique_publishers = n_distinct(publisher), avg_rating = mean(average_rating))
+
+# Sort the authors by the number of unique publishers
+top_authors_with_rating <- top_authors_with_rating[order(top_authors_with_rating$unique_publishers, decreasing = TRUE), ]
+
+top_authors_with_rating
+
+```
+
+
+```{r}
+# Calculate the average rating for all the authors in the top 100 list
+avg_rating_top_100 <- mean(top_authors_with_rating$avg_rating)
+
+# Print the average rating for all the authors in the top 100 list
+cat("Average rating for the top 100 authors:", avg_rating_top_100, "\n")
+
+avg_rating_all_books <- mean(books_complete$average_rating)
+cat("Average rating for all books:", avg_rating_all_books, "\n")
+
+```
+## Finding top authors does not correlate with finding better ratings.
+
+```{r}
+top_authors_avg_rating <- books_complete %>%
+  group_by(authors) %>%
+  summarize(avg_rating = mean(average_rating),
+            total_reviews = sum(text_reviews_count)) %>%
+  filter(avg_rating > 4.5) %>%
+  arrange(desc(total_reviews)) %>%
+  top_n(30)
+
+top_authors_avg_rating
+
+
+```
+
+```{r}
+
+
+
+```
+
+## Authors with higher than average ratings and the quantity of ratings
+```{r}
+# Truncate author names to fit the plot
+
+top_authors_avg_rating$truncated_authors <- ifelse(nchar(top_authors_avg_rating$authors) > 25,
+                                                   substr(top_authors_avg_rating$authors, 1, 25),
+                                                   top_authors_avg_rating$authors)
+
+ggplot(top_authors_avg_rating, aes(x = reorder(truncated_authors, -total_reviews), y = log(total_reviews), fill = avg_rating)) +
+  geom_col() +
+  geom_text(aes(label = total_reviews), vjust = -0.5, size = 3, angle = 45) +
+  scale_fill_gradient(low = "lightblue", high = "darkblue") +
+  labs(title = "Top Authors - Average Rating and Total Reviews",
+       x = "Authors",
+       y = "Log(Total Reviews)") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5))
+
+```
+
+
+```{r}
+
+install.packages("neuralnet")
+library(neuralnet)
+
+library(caret)
+
+set.seed(123)  # Set a seed for reproducibility
+split <- createDataPartition(books_complete$average_rating, p = 0.7, list = FALSE)
+train_data <- books_complete[split, ]
+test_data <- books_complete[-split, ]
+
+```
+
+##
+
+```{r}
+
+```
+
+```{r}
+library(e1071)  # Load the e1071 package for SVM
+
+svm_model <- svm(average_rating ~ num_pages + text_reviews_count, data = train_data, kernal = "radial")
+
+```
+
+```{r}
+
+
+```
+```{r}
+predictions <- predict(svm_model, newdata = test_data)
+
+# Calculate accuracy within a threshold
+threshold <- 0.25
+accuracy <- sum(abs(predictions - test_data$average_rating) <= threshold) / length(predictions)
+
+# Print the modified accuracy
+print(accuracy)
+
+```
+
+```{r}
+predictions_binary <- ifelse(abs(predictions - test_data$average_rating) <= threshold, 1, 0)
+true_values_binary <- ifelse(test_data$average_rating > threshold, 1, 0)
+
+confusion_matrix <- table(predictions_binary, true_values_binary)
+print(confusion_matrix)
+
+```
+```{r}
+# Overall accuracy
+accuracy <- sum(diag(confusion_matrix)) / sum(confusion_matrix)
+
+# Create a tool
+as.percent <- function(x) {
+  percent <- round(x * 100, 2)
+  paste0(percent, "%")
+}
+
+
+# Print accuracy
+cat("\n","Model is close (within a quarter star)", as.percent(accuracy),  "of the time")
+```
+
+```{r}
+metrics <- confusionMatrix(confusion_matrix)
+metrics
+```
+```{r}
+threshold <- 0.25
+average <- mean(books_complete$average_rating)  # Calculate the average value of average_rating
+within_threshold <- sum(abs(books_complete$average_rating - average) <= threshold)  # Count the number of ratings within the threshold
+percentage <- (within_threshold / nrow(books_complete)) * 100  # Calculate the percentage
+
+percentage
+
+```
